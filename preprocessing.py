@@ -3,7 +3,6 @@ import psycopg2
 def get_query_plan(sql_query, db_config):
     """
     connect to PostgreSQL and retrieve the execution plan for the given query
-    
     :param sql_query: SQL query to analyze
     :param db_config: dictionary containing database connection parameters
     :return: query execution plan as a string

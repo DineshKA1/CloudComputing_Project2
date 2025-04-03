@@ -11,7 +11,7 @@ from interface import execute_conversion
 
 def main():
     #run the SQL to Pipe-Syntax conversion project
-    print("Starting SQL to Pipe-Syntax Conversion Tool...")
+    print("Starting SQL to Pipe-Syntax Conversion")
     execute_conversion()
 
 if __name__ == "__main__":

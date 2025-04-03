@@ -3,7 +3,6 @@ import re
 def parse_qep(qep):
     """
     parse the QEP output -> extract key operations in order
-
     :param qep: query execution plan as a string
     :return: list of parsed execution steps
     """
@@ -17,7 +16,6 @@ def parse_qep(qep):
 def convert_to_pipe_syntax(qep):
     """
     convert parsed QEP into pipe-syntax format
-    
     :param qep: query execution plan as a string
     :return: equivalent pipe-syntax SQL query
     """
