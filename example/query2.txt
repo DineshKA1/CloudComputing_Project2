@@ -1,0 +1,20 @@
+SELECT 
+    c_custkey,
+    c_name,
+    COUNT(DISTINCT o_orderkey) as order_count,
+    SUM(l_quantity) as total_quantity,
+    SUM(l_extendedprice) as total_price
+FROM 
+    customer
+    JOIN orders ON c_custkey = o_custkey
+    JOIN lineitem ON o_orderkey = l_orderkey
+WHERE 
+    o_orderdate >= '1995-01-01'
+    AND o_orderdate < '1996-01-01'
+GROUP BY 
+    c_custkey, c_name
+HAVING 
+    COUNT(DISTINCT o_orderkey) > 5
+ORDER BY 
+    total_price DESC
+LIMIT 10;

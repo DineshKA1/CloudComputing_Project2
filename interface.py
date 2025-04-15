@@ -13,7 +13,7 @@ def execute_conversion():
     db_config = {
         "dbname": "tpch",
         "user": "postgres",
-        "password": "password",
+        "password": "Afoafo2025!!",
         "host": "localhost",
         "port": "5432"
     }
