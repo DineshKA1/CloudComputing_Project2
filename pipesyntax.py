@@ -19,17 +19,14 @@ def parse_qep(qep_text: str) -> List[str]:
     for i, line in enumerate(lines):
         indent = len(line) - len(line.lstrip())
 
-        # 1) 跳过 Partial/Aggregate workers/Gather Merge
         if 'Partial HashAggregate' in line \
            or 'Gather Merge' in line \
            or 'Worker' in line:
             continue
 
-        # 2) 提取 estimated cost
         cost_m = re.search(r'\(cost=([0-9.]+)\.\.([0-9.]+)', line)
         cost_str = f"-- cost: {cost_m.group(1)}..{cost_m.group(2)}" if cost_m else ""
 
-        # 3) SCAN 节点（包括 Seq Scan, Index Only Scan, Bitmap Heap Scan 等）
         if 'Scan on' in line and '->' in line:
             tbl_m = re.search(r'on\s+(\w+)', line)
             if tbl_m:
