@@ -1,5 +1,5 @@
 import psycopg2
-from pipesyntax import convert_to_pipe_syntax
+import pipesyntaxT
 
 class Database:
     def __init__(self, dbname, user, password, host, port = 5432):
@@ -35,7 +35,7 @@ class Database:
         if not self.conn:
             raise ValueError("Not connected to the database")
         cur = self.conn.cursor()
-        cur.execute("EXPLAIN (FORMAT JSON, ANALYZE FALSE, COSTS TRUE) " + sql)
+        cur.execute("EXPLAIN (FORMAT JSON, ANALYZE TRUE, COSTS TRUE) " + sql)
         plan = cur.fetchone()[0]    
         cur.close()
         return plan
@@ -52,14 +52,20 @@ class Database:
 
 #test usage
 if __name__ == "__main__":
-    Database = Database("tpch", "postgres", "pwd", "localhost", "5432")
-    with open('example/query2.txt', 'r') as file:
+    Database = Database("tpch", "postgres", "Afoafo2025!!", "localhost", "5432")
+    with open('example/query1.txt', 'r') as file:
         query = file.read().strip()
     Database.connect()
-    plan = Database.get_plan_original(query)
-    # plan = Database.get_plan_json(query)
-    # print(plan_json)
-    print(plan)
-    print("----")
-    print(convert_to_pipe_syntax(plan))
+    # plan = Database.get_plan_original(query)
+    plan_json = Database.get_plan_json(query)
+    print(plan_json)
+    root = pipesyntaxT.parse_qep_json(plan_json)
+    result = pipesyntaxT.node_to_syntax(root)
+    print("pipe-syntax result:")
+    print(result)
+    # print(plan)
+    # print("----")
+    # print(pipesyntaxT.convert_to_raw_pipe_syntax(plan))
+    # root = pipesyntaxT.parse_qep(plan)
+    # print(pipesyntaxT.node_to_syntax(root))
     Database.disconnect() 

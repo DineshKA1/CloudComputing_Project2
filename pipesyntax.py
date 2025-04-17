@@ -25,7 +25,12 @@ def parse_qep(qep_text: str) -> List[str]:
             continue
 
         cost_m = re.search(r'\(cost=([0-9.]+)\.\.([0-9.]+)', line)
-        cost_str = f"-- cost: {cost_m.group(1)}..{cost_m.group(2)}" if cost_m else ""
+        if cost_m:
+            startup_cost = cost_m.group(1)
+            total_cost = cost_m.group(2)
+            cost_str = f"-- startup: {startup_cost}, total: {total_cost}"
+        else:
+            cost_str = ""
 
         if 'Scan on' in line and '->' in line:
             tbl_m = re.search(r'on\s+(\w+)', line)
@@ -84,25 +89,27 @@ def parse_qep(qep_text: str) -> List[str]:
             continue
     steps.reverse()
 
-    if steps and steps[0].startswith("SCAN"):
-        tbl = steps[0].split()[1]
-        steps[0] = f"FROM {tbl}"
+    # if steps and steps[0].startswith("SCAN"):
+    #     tbl = steps[0].split()[1]
+    #     steps[0] = f"FROM {tbl}"
 
     return steps
 
-def convert_to_pipe_syntax(qep):
-    """
-    convert parsed QEP into pipe-syntax format
-    :param qep: query execution plan as a string
-    :return: equivalent pipe-syntax SQL query
-    """
-    steps = parse_qep(qep)
+# def convert_to_pipe_syntax(qep):
+#     """
+#     convert parsed QEP into pipe-syntax format
+#     :param qep: query execution plan as a string
+#     :return: equivalent pipe-syntax SQL query
+#     """
+#     steps = parse_qep(qep)
     
-    if not steps:
-        return "Error: Unable to parse QEP."
+#     if not steps:
+#         return "Error: Unable to parse QEP."
     
-    pipe_syntax_query = "\n|> ".join(steps)
-    return pipe_syntax_query
+#     pipe_syntax_query = "\n|> ".join(steps)
+#     return pipe_syntax_query
+
+
 
 #test usage
 if __name__ == "__main__":
