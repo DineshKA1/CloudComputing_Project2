@@ -18,6 +18,7 @@ class Database:
             host=self.host,
             port=self.port   
         )
+        
     def disconnect(self):
         if self.conn:
             self.conn.close()
@@ -31,6 +32,7 @@ class Database:
         result = cur.fetchall()
         cur.close()
         return result
+        
     def get_plan_json(self, sql):
         if not self.conn:
             raise ValueError("Not connected to the database")
@@ -40,7 +42,6 @@ class Database:
         cur.close()
         return plan
 
-    # current use this one
     def get_plan_original(self, sql): 
         if not self.conn:
             raise ValueError("Not connected to the database")
@@ -50,22 +51,5 @@ class Database:
         cur.close()
         return plan
 
-#test usage
-if __name__ == "__main__":
-    Database = Database("tpch", "postgres", "Afoafo2025!!", "localhost", "5432")
-    with open('example/query1.txt', 'r') as file:
-        query = file.read().strip()
-    Database.connect()
-    # plan = Database.get_plan_original(query)
-    plan_json = Database.get_plan_json(query)
-    print(plan_json)
-    root = pipesyntaxT.parse_qep_json(plan_json)
-    result = pipesyntaxT.node_to_syntax(root)
-    print("pipe-syntax result:")
-    print(result)
-    # print(plan)
-    # print("----")
-    # print(pipesyntaxT.convert_to_raw_pipe_syntax(plan))
-    # root = pipesyntaxT.parse_qep(plan)
-    # print(pipesyntaxT.node_to_syntax(root))
-    Database.disconnect() 
+def get_query_plan(db, sql):
+    return db.get_plan_json(sql)

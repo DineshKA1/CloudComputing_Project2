@@ -1,6 +1,6 @@
 import re
-
 from typing import List
+
 class QEPNode:
     def __init__(self, operation, startup_cost=None, total_cost=None, table=None):
         self.operation = operation    
@@ -21,7 +21,7 @@ def parse_qep(qep):
     root = None
     nodes_stack = []
     qep = "\n-> " + qep
-    print("DEBUG QEP:", qep)
+    
     for line in qep.split('\n'):
         if "->" not in line:
             # 处理附加信息行
@@ -89,7 +89,6 @@ def parse_qep(qep):
         
         # 处理Join操作
         elif "Join" in operation:
-            # 捕获join类型
             node.operation = "JOIN"
             if "Hash" in operation:
                 node.properties['method'] = "HASH"
@@ -99,7 +98,6 @@ def parse_qep(qep):
                 node.properties['method'] = "NESTED LOOP"
         elif "Aggregate" in operation:
             node.operation = "AGGREGATE"
-            # 捕获聚合方法
             if "Partial" in operation:
                 node.properties['method'] = "PARTIAL"
             elif "Final" in operation:
@@ -109,15 +107,75 @@ def parse_qep(qep):
         while nodes_stack and nodes_stack[-1][0] >= indent:
             nodes_stack.pop()
             
-        print("CREATING TREE:", indent, node.operation, cost, node.properties)
         if nodes_stack:
             nodes_stack[-1][1].children.append(node)
-            # print("WITH PARENT:::", nodes_stack[-1][1].operation)
         else:
             root = node
         nodes_stack.append((indent, node))
     
     return root
+
+def parse_qep_json(qep_json):
+    """Parse JSON format query execution plan"""
+    def process_node(plan_dict):
+        node_type = plan_dict.get('Node Type', '')
+        node = QEPNode(node_type)
+        
+        startup_cost = plan_dict.get('Startup Cost')
+        total_cost = plan_dict.get('Total Cost')
+        if startup_cost is not None and total_cost is not None:
+            node.startup_cost = startup_cost
+            node.total_cost = total_cost
+        
+        if 'Scan' in node_type:
+            node.table = plan_dict.get('Relation Name')
+            node.operation = node_type
+            
+            if 'Filter' in plan_dict:
+                node.properties['filter'] = plan_dict['Filter']
+        
+        # Process Join operations
+        elif 'Join' in node_type:
+            node.operation = node_type
+            if 'Hash' in node_type:
+                node.properties['method'] = "HASH"
+            elif 'Merge' in node_type:
+                node.properties['method'] = "MERGE"
+            elif 'Nested' in node_type:
+                node.properties['method'] = "NESTED LOOP"
+            
+            if 'Hash Cond' in plan_dict:
+                node.properties['condition'] = plan_dict['Hash Cond']
+            elif 'Merge Cond' in plan_dict:
+                node.properties['condition'] = plan_dict['Merge Cond']
+            elif 'Join Filter' in plan_dict:
+                node.properties['condition'] = plan_dict['Join Filter']
+        
+        # Process Aggregate operations
+        elif 'Aggregate' in node_type:
+            node.operation = "AGGREGATE"
+            if 'Group Key' in plan_dict:
+                node.properties['group_key'] = plan_dict['Group Key']
+        
+        # Process Sort operations
+        elif 'Sort' in node_type:
+            node.operation = "SORT"
+            if 'Sort Key' in plan_dict:
+                node.properties['sort_key'] = plan_dict['Sort Key']
+        
+        if 'Plans' in plan_dict:
+            for child_plan in plan_dict['Plans']:
+                child_node = process_node(child_plan)
+                if child_node:
+                    node.children.append(child_node)
+        
+        return node
+    
+    # Processroot node
+    if not qep_json or not isinstance(qep_json, list) or not qep_json[0].get('Plan'):
+        return None
+    
+    return process_node(qep_json[0]['Plan'])
 
 def node_to_syntax(node, is_root=True):
     if not node:
@@ -142,7 +200,6 @@ def node_to_syntax(node, is_root=True):
     if props:
         operation += f" {' '.join(props)}"
     
-
     if node.startup_cost and node.total_cost:
         operation += f" -- startup cost: {node.startup_cost}, total cost: {node.total_cost}"
     
@@ -152,77 +209,9 @@ def node_to_syntax(node, is_root=True):
         if child_syntax:
             result.append(child_syntax)
     
-    print("NODE:", node.operation, node.total_cost, node.table, node.children, node.properties, is_root)
     result.append(operation)
     return "\n|> ".join(filter(None, result))
 
-def convert_to_raw_pipe_syntax(qep):
-    root = parse_qep(qep)
-    return "\n|> " + node_to_syntax(root, True) + ";"
-
-def parse_qep_json(qep_json):
-    """解析JSON格式的查询执行计划"""
-    def process_node(plan_dict):
-        node_type = plan_dict.get('Node Type', '')
-        node = QEPNode(node_type)
-        
-        # 设置成本信息
-        startup_cost = plan_dict.get('Startup Cost')
-        total_cost = plan_dict.get('Total Cost')
-        if startup_cost is not None and total_cost is not None:
-            node.startup_cost = startup_cost
-            node.total_cost = total_cost
-        
-        # 处理Scan操作
-        if 'Scan' in node_type:
-            node.table = plan_dict.get('Relation Name')
-            node.operation = node_type
-            
-            # 处理过滤条件
-            if 'Filter' in plan_dict:
-                node.properties['filter'] = plan_dict['Filter']
-        
-        # 处理Join操作
-        elif 'Join' in node_type:
-            node.operation = node_type
-            if 'Hash' in node_type:
-                node.properties['method'] = "HASH"
-            elif 'Merge' in node_type:
-                node.properties['method'] = "MERGE"
-            elif 'Nested' in node_type:
-                node.properties['method'] = "NESTED LOOP"
-            
-            # 处理join条件
-            if 'Hash Cond' in plan_dict:
-                node.properties['condition'] = plan_dict['Hash Cond']
-            elif 'Merge Cond' in plan_dict:
-                node.properties['condition'] = plan_dict['Merge Cond']
-            elif 'Join Filter' in plan_dict:
-                node.properties['condition'] = plan_dict['Join Filter']
-        
-        # 处理Aggregate操作
-        elif 'Aggregate' in node_type:
-            node.operation = "AGGREGATE"
-            if 'Group Key' in plan_dict:
-                node.properties['group_key'] = plan_dict['Group Key']
-        
-        # 处理Sort操作
-        elif 'Sort' in node_type:
-            node.operation = "SORT"
-            if 'Sort Key' in plan_dict:
-                node.properties['sort_key'] = plan_dict['Sort Key']
-        
-        # 递归处理子节点
-        if 'Plans' in plan_dict:
-            for child_plan in plan_dict['Plans']:
-                child_node = process_node(child_plan)
-                if child_node:
-                    node.children.append(child_node)
-        
-        return node
-    
-    # 处理根节点
-    if not qep_json or not isinstance(qep_json, list) or not qep_json[0].get('Plan'):
-        return None
-    
-    return process_node(qep_json[0]['Plan'])
+def convert_to_pipe_syntax(qep_json):
+    root = parse_qep_json(qep_json)
+    return node_to_syntax(root)
