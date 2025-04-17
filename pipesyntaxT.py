@@ -163,6 +163,10 @@ def parse_qep_json(qep_json):
             if 'Sort Key' in plan_dict:
                 node.properties['sort_key'] = plan_dict['Sort Key']
         
+        # Process Limit operations
+        elif 'Limit' in node_type:
+             node.operation = "LIMIT"
+        
         if 'Plans' in plan_dict:
             for child_plan in plan_dict['Plans']:
                 child_node = process_node(child_plan)
@@ -181,36 +185,56 @@ def node_to_syntax(node, is_root=True):
     if not node:
         return ""
         
-    operation = node.operation
-    props = []
-    if node.properties['method']:
-        operation = f"{node.properties['method']} {operation}"
-    if node.properties['condition']:
-        props.append(f"ON {node.properties['condition']}")
-    if node.properties['group_key']:
-        props.append(f"GROUP BY {node.properties['group_key']}")
-    if node.properties['sort_key']:
-        order = f" {node.properties['sort_order']}" if node.properties['sort_order'] else ""
-        props.append(f"ORDER BY {node.properties['sort_key']}{order}")
-    if node.properties['filter']:
-        props.append(f"WHERE {node.properties['filter']}")
-    
-    if node.table:
-        operation += f" on {node.table}"
-    if props:
-        operation += f" {' '.join(props)}"
-    
-    if node.startup_cost and node.total_cost:
-        operation += f" -- startup cost: {node.startup_cost}, total cost: {node.total_cost}"
-    
     result = []
     for child in node.children:
-        child_syntax = node_to_syntax(child, False)
-        if child_syntax:
-            result.append(child_syntax)
+        result.append(node_to_syntax(child, is_root=False))
+
+    op_type = node.operation.upper()
+    line = ""
+
+    # FROM clause
+    if op_type == "SCAN" and node.table:
+        line = f"FROM {node.table}"
+
+    # JOINs
+    elif op_type == "JOIN":
+        method = node.properties.get("method", "")
+        condition = node.properties.get("condition", "")
+        line = f"{method} JOIN on {condition}" if method else f"JOIN on {condition}"
     
-    result.append(operation)
+    # Filter
+    if node.properties.get("filter"):
+        line += f" WHERE {node.properties['filter']}"
+
+    # Aggregation
+    if op_type == "AGGREGATE":
+        group_by = node.properties.get("group_key")
+        if group_by:
+            line = f"AGGREGATE GROUP BY {group_by}"
+        else:
+            line = "AGGREGATE"
+
+
+    # Sort
+    if op_type == "SORT":
+        sort_key = node.properties.get("sort_key", "")
+        sort_order = node.properties.get("sort_order", "")
+        line = f"ORDER BY {sort_key} {sort_order}".strip()
+
+    # Limit   
+    if op_type == "LIMIT":
+        limit_val = node.properties.get("limit")
+        if limit_val:
+            line = f"LIMIT {limit_val}"
+
+    
+    # Cost
+    if node.startup_cost and node.total_cost:
+        line += f" -- startup cost: {node.startup_cost}, total cost: {node.total_cost}"
+    
+    result.append(line)
     return "\n|> ".join(filter(None, result))
+
 
 def convert_to_pipe_syntax(qep_json):
     root = parse_qep_json(qep_json)
