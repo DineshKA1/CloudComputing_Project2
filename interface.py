@@ -11,7 +11,7 @@ from PySide6.QtCore import Qt, QSize, QRectF, QPointF, Signal, QAbstractTableMod
 from PySide6.QtGui import QIcon, QFont, QColor, QPalette, QPen, QBrush, QPainterPath, QLinearGradient
 
 from preprocessing import Database
-from pipesyntaxT import parse_qep_json, node_to_syntax
+from pipesyntaxT import parse_qep_json, sql_to_pipe
 
 
 class NodeGraphicsItem(QGraphicsPathItem):
@@ -733,8 +733,10 @@ class MainWindow(QMainWindow):
             
             root = parse_qep_json(plan_json)
             self.current_qep_root = root
-            pipe_syntax = node_to_syntax(root)
-            # Convert QEP tree into pipe-syntax string for display
+            
+           # Convert query into pipe-syntax string for display
+            pipe_syntax = sql_to_pipe(query)
+
 
             self.pipe_syntax_output.setText(pipe_syntax)
             self.qep_output.setText(original_plan)

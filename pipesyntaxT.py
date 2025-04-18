@@ -1,5 +1,7 @@
 import re
 from typing import List
+import sqlglot
+from sqlglot import parse_one, exp
 
 class QEPNode:
     def __init__(self, operation, startup_cost=None, total_cost=None, table=None):
@@ -127,12 +129,22 @@ def parse_qep_json(qep_json):
             node.startup_cost = startup_cost
             node.total_cost = total_cost
         
+        if 'Filter' in plan_dict:
+            node.properties['filter'] = plan_dict['Filter']
+
+        if 'Plans' in plan_dict:
+            for child_plan in plan_dict['Plans']:
+                child_node = process_node(child_plan)
+                if child_node:
+                    node.children.append(child_node)
+
+        
         if 'Scan' in node_type:
             node.table = plan_dict.get('Relation Name')
             node.operation = node_type
             
-            if 'Filter' in plan_dict:
-                node.properties['filter'] = plan_dict['Filter']
+            #if 'Filter' in plan_dict:
+                #node.properties['filter'] = plan_dict['Filter']
         
         # Process Join operations
         elif 'Join' in node_type:
@@ -143,6 +155,8 @@ def parse_qep_json(qep_json):
                 node.properties['method'] = "MERGE"
             elif 'Nested' in node_type:
                 node.properties['method'] = "NESTED LOOP"
+            elif 'Loop' in node_type:
+                node.properties['method'] = "LOOP"
             
             if 'Hash Cond' in plan_dict:
                 node.properties['condition'] = plan_dict['Hash Cond']
@@ -156,6 +170,10 @@ def parse_qep_json(qep_json):
             node.operation = "AGGREGATE"
             if 'Group Key' in plan_dict:
                 node.properties['group_key'] = plan_dict['Group Key']
+            if 'Strategy' in plan_dict:
+                node.properties['strategy'] = plan_dict['Strategy']
+            if 'Output' in plan_dict:
+                node.properties['output'] = plan_dict['Output']
         
         # Process Sort operations
         elif 'Sort' in node_type:
@@ -166,12 +184,7 @@ def parse_qep_json(qep_json):
         # Process Limit operations
         elif 'Limit' in node_type:
              node.operation = "LIMIT"
-        
-        if 'Plans' in plan_dict:
-            for child_plan in plan_dict['Plans']:
-                child_node = process_node(child_plan)
-                if child_node:
-                    node.children.append(child_node)
+
         
         return node
     
@@ -181,61 +194,119 @@ def parse_qep_json(qep_json):
     
     return process_node(qep_json[0]['Plan'])
 
-def node_to_syntax(node, is_root=True):
-    if not node:
+def sql_to_pipe(query: str, qep_root=None, is_subquery=False) -> str:
+    tree = parse_one(query)
+    lines = []
+    qep_nodes = []
+
+     # Flatten the QEP tree into a list (pre-order traversal)
+    def flatten_qep(node):
+        if not node:
+            return []
+        nodes = [node]
+        for child in node.children:
+            nodes.extend(flatten_qep(child))
+        return nodes
+
+    if qep_root:
+        qep_nodes = flatten_qep(qep_root)
+
+    # Help to find a matching node and consume it
+    def pop_qep_node(operation_type=None):
+        if not qep_nodes:
+            return None
+        if operation_type is None:
+            return qep_nodes.pop(0)
+        for i, node in enumerate(qep_nodes):
+            if operation_type.upper() in node.operation.upper():
+                return qep_nodes.pop(i)
+        return qep_nodes.pop(0)  # fallback
+
+    def cost_comment(node):
+        if node and node.startup_cost is not None and node.total_cost is not None:
+            return f"  -- cost={node.startup_cost:.2f}..{node.total_cost:.2f}"
         return ""
-        
-    result = []
-    for child in node.children:
-        result.append(node_to_syntax(child, is_root=False))
 
-    op_type = node.operation.upper()
-    line = ""
 
-    # FROM clause
-    if op_type == "SCAN" and node.table:
-        line = f"FROM {node.table}"
+    def extract(expr):
+        if isinstance(expr, exp.From):
+            node = pop_qep_node("Scan")
+            table_expr = expr.this
+            if isinstance(table_expr, exp.Subquery):
+                return sql_to_pipe(table_expr.unnest().sql(), qep_root=None, is_subquery=True)
+            return f"FROM {table_expr.sql()}{cost_comment(node)}"
 
-    # JOINs
-    elif op_type == "JOIN":
-        method = node.properties.get("method", "")
-        condition = node.properties.get("condition", "")
-        line = f"{method} JOIN on {condition}" if method else f"JOIN on {condition}"
-    
-    # Filter
-    if node.properties.get("filter"):
-        line += f" WHERE {node.properties['filter']}"
 
-    # Aggregation
-    if op_type == "AGGREGATE":
-        group_by = node.properties.get("group_key")
-        if group_by:
-            line = f"AGGREGATE GROUP BY {group_by}"
+        elif isinstance(expr, exp.Join):
+            table_expr = expr.args["this"]
+            on_expr = expr.args.get("on")
+            join_type = expr.args.get("kind", "INNER").upper()
+            if join_type == "OUTER":
+                if "LEFT" in expr.sql():
+                    join_type = "LEFT"
+                elif "RIGHT" in expr.sql():
+                    join_type = "RIGHT"
+            condition = f" ON {on_expr.sql()}" if on_expr else ""
+            node = pop_qep_node("Join")
+
+            if isinstance(table_expr, exp.Subquery):
+                sub_lines = sql_to_pipe(table_expr.unnest().sql(), qep_root=None, is_subquery=True).splitlines()
+                return "\n".join(sub_lines + [f"|> {join_type} JOIN subplan{condition}{cost_comment(node)}"])
+            else:
+                return f"|> {join_type} JOIN {table_expr.sql()}{condition}{cost_comment(node)}"
+
+        elif isinstance(expr, exp.Where):
+            node = pop_qep_node("Filter")
+            return f"|> WHERE {expr.this.sql()}{cost_comment(node)}"
+
+        elif isinstance(expr, exp.Group):
+            node = pop_qep_node("Aggregate")
+            return f"|> AGGREGATE {', '.join([e.sql() for e in expr.expressions])} GROUP BY {', '.join([e.sql() for e in expr.expressions])}{cost_comment(node)}"
+
+        elif isinstance(expr, exp.Having):
+            return f"|> HAVING {expr.this.sql()}" 
+
+        elif isinstance(expr, exp.Order):
+            node = pop_qep_node("Sort")
+            return f"|> ORDER BY {expr.sql().replace('ORDER BY', '').strip()}{cost_comment(node)}"
+
+        elif isinstance(expr, exp.Limit):
+            node = pop_qep_node("Limit")
+            limit_value = expr.args.get("expression")
+            if limit_value:
+                return f"|> LIMIT {limit_value.sql()}{cost_comment(node)}"
+
+        return None
+
+    # Handle SELECT
+    if isinstance(tree, exp.Select):
+        if tree.args.get("from"):
+            from_clause = extract(tree.args["from"])
+            if from_clause:
+                lines.append(from_clause)
+
+        joins = tree.args.get("joins") or []
+        for join in joins:
+            join_clause = extract(join)
+            if join_clause:
+                lines.append(join_clause)
+
+        if tree.args.get("where"):
+            lines.append(extract(tree.args["where"]))
+
+        if tree.args.get("group"):
+            group = tree.args["group"]
+            lines.append(extract(group))
         else:
-            line = "AGGREGATE"
+            lines.append(f"|> SELECT {', '.join([e.sql() for e in tree.expressions])}")
 
+        if tree.args.get("having"):
+            lines.append(extract(tree.args["having"]))
 
-    # Sort
-    if op_type == "SORT":
-        sort_key = node.properties.get("sort_key", "")
-        sort_order = node.properties.get("sort_order", "")
-        line = f"ORDER BY {sort_key} {sort_order}".strip()
+        if tree.args.get("order"):
+            lines.append(extract(tree.args["order"]))
 
-    # Limit   
-    if op_type == "LIMIT":
-        limit_val = node.properties.get("limit")
-        if limit_val:
-            line = f"LIMIT {limit_val}"
+        if tree.args.get("limit"):
+            lines.append(extract(tree.args["limit"]))
 
-    
-    # Cost
-    if node.startup_cost and node.total_cost:
-        line += f" -- startup cost: {node.startup_cost}, total cost: {node.total_cost}"
-    
-    result.append(line)
-    return "\n|> ".join(filter(None, result))
-
-
-def convert_to_pipe_syntax(qep_json):
-    root = parse_qep_json(qep_json)
-    return node_to_syntax(root)
+    return "\n".join(lines)
