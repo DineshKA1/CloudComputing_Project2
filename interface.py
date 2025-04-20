@@ -11,7 +11,7 @@ from PySide6.QtCore import Qt, QSize, QRectF, QPointF, Signal, QAbstractTableMod
 from PySide6.QtGui import QIcon, QFont, QColor, QPalette, QPen, QBrush, QPainterPath, QLinearGradient
 
 from preprocessing import Database
-from pipesyntaxT import parse_qep_json, sql_to_pipe
+from pipesyntax import parse_qep_json, sql_to_pipe
 
 
 class NodeGraphicsItem(QGraphicsPathItem):

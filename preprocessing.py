@@ -1,5 +1,5 @@
 import psycopg2
-import pipesyntaxT
+import pipesyntax
 
 class Database:
     def __init__(self, dbname, user, password, host, port = 5432):
