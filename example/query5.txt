@@ -1,0 +1,16 @@
+SELECT 
+    CASE 
+        WHEN total_price < 1000 THEN 'low'
+        WHEN total_price < 5000 THEN 'medium'
+        WHEN total_price < 20000 THEN 'high'
+        ELSE 'very high'
+    END AS price_bucket,
+    COUNT(*) AS order_count
+FROM (
+    SELECT o.o_orderkey, SUM(l.l_extendedprice) AS total_price
+    FROM orders o
+    JOIN lineitem l ON o.o_orderkey = l.l_orderkey
+    GROUP BY o.o_orderkey
+) AS order_totals
+GROUP BY price_bucket
+ORDER BY order_count DESC;

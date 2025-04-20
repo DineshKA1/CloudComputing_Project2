@@ -1,0 +1,8 @@
+SELECT 
+    l.l_partkey,
+    COUNT(*) AS order_count,
+    SUM(l.l_quantity) AS total_sold
+FROM lineitem l
+GROUP BY l.l_partkey
+ORDER BY total_sold DESC
+LIMIT 10;

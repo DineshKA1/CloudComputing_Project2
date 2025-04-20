@@ -1,0 +1,14 @@
+SELECT 
+    c.c_custkey,
+    c.c_name,
+    SUM(l.l_extendedprice) AS total_spent
+FROM 
+    customer c
+    JOIN orders o ON c.c_custkey = o.o_custkey
+    JOIN lineitem l ON o.o_orderkey = l.l_orderkey
+GROUP BY 
+    c.c_custkey, c.c_name
+HAVING 
+    SUM(l.l_extendedprice) > 5000000
+ORDER BY 
+    total_spent DESC;
