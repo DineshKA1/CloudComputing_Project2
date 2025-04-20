@@ -1,0 +1,3 @@
+PySide6>=6.5.0
+psycopg2>=2.9.6
+sqlglot>=19.0.0
