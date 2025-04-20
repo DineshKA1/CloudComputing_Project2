@@ -50,6 +50,3 @@ class Database:
         plan = "\n".join(row[0] for row in cur.fetchall())
         cur.close()
         return plan
-
-def get_query_plan(db, sql):
-    return db.get_plan_json(sql)

@@ -11,12 +11,12 @@ class QEPNode:
         self.table = table           
         self.children = []           
         self.properties = {
-            'condition': None,        # join条件
-            'group_key': None,        # 分组键
-            'sort_key': None,         # 排序键
-            'sort_order': None,       # 排序顺序
-            'filter': None,           # 过滤条件
-            'method': None,           # 操作方法（如Hash/Merge/Nested Loop）
+            'condition': None,       
+            'group_key': None,        
+            'sort_key': None,         
+            'sort_order': None,       
+            'filter': None,           
+            'method': None,           
         }
 
 def parse_qep(qep):
@@ -26,14 +26,12 @@ def parse_qep(qep):
     
     for line in qep.split('\n'):
         if "->" not in line:
-            # 处理附加信息行
             if "Sort Key:" in line:
                 if nodes_stack:
                     sort_info = re.search(r'Sort Key: (.+)', line)
                     if sort_info:
                         current = nodes_stack[-1][1]
                         current.properties['sort_key'] = sort_info.group(1)
-                        # 提取排序顺序（DESC/ASC）
                         if "DESC" in line:
                             current.properties['sort_order'] = "DESC"
                         else:
@@ -57,7 +55,6 @@ def parse_qep(qep):
                         nodes_stack[-1][1].properties['filter'] = filter_info.group(1)
             continue
         
-        # 忽略所有并行相关的操作
         if any(op in line for op in [
             'Partial', 
             'Finalize',
@@ -77,19 +74,16 @@ def parse_qep(qep):
         operation = op_match.group(1).strip()
         node = QEPNode(operation, cost)
         
-        # 处理Scan操作
         if "Scan" in operation:
             table_match = re.search(r'on\s+(\w+)', line)
             if table_match:
                 node.table = table_match.group(1)
                 node.operation = "SCAN"
-                # 捕获扫描方法
                 if "Index" in operation:
                     node.properties['method'] = "INDEX"
                 elif "Seq" in operation:
                     node.properties['method'] = "SEQUENTIAL"
-        
-        # 处理Join操作
+
         elif "Join" in operation:
             node.operation = "JOIN"
             if "Hash" in operation:
@@ -105,7 +99,6 @@ def parse_qep(qep):
             elif "Final" in operation:
                 node.properties['method'] = "FINAL"
 
-        # 根据缩进级别构建树
         while nodes_stack and nodes_stack[-1][0] >= indent:
             nodes_stack.pop()
             
@@ -142,11 +135,6 @@ def parse_qep_json(qep_json):
         if 'Scan' in node_type:
             node.table = plan_dict.get('Relation Name')
             node.operation = node_type
-            
-            #if 'Filter' in plan_dict:
-                #node.properties['filter'] = plan_dict['Filter']
-        
-        # Process Join operations
         elif 'Join' in node_type:
             node.operation = node_type
             if 'Hash' in node_type:
@@ -165,7 +153,6 @@ def parse_qep_json(qep_json):
             elif 'Join Filter' in plan_dict:
                 node.properties['condition'] = plan_dict['Join Filter']
         
-        # Process Aggregate operations
         elif 'Aggregate' in node_type:
             node.operation = "AGGREGATE"
             if 'Group Key' in plan_dict:
@@ -175,20 +162,17 @@ def parse_qep_json(qep_json):
             if 'Output' in plan_dict:
                 node.properties['output'] = plan_dict['Output']
         
-        # Process Sort operations
         elif 'Sort' in node_type:
             node.operation = "SORT"
             if 'Sort Key' in plan_dict:
                 node.properties['sort_key'] = plan_dict['Sort Key']
         
-        # Process Limit operations
         elif 'Limit' in node_type:
              node.operation = "LIMIT"
 
         
         return node
     
-    # Processroot node
     if not qep_json or not isinstance(qep_json, list) or not qep_json[0].get('Plan'):
         return None
     
@@ -199,7 +183,6 @@ def sql_to_pipe(query: str, qep_root=None, is_subquery=False) -> str:
     lines = []
     qep_nodes = []
 
-     # Flatten the QEP tree into a list (pre-order traversal)
     def flatten_qep(node):
         if not node:
             return []
@@ -211,7 +194,6 @@ def sql_to_pipe(query: str, qep_root=None, is_subquery=False) -> str:
     if qep_root:
         qep_nodes = flatten_qep(qep_root)
 
-    # Help to find a matching node and consume it
     def pop_qep_node(operation_type=None):
         if not qep_nodes:
             return None
@@ -220,7 +202,7 @@ def sql_to_pipe(query: str, qep_root=None, is_subquery=False) -> str:
         for i, node in enumerate(qep_nodes):
             if operation_type.upper() in node.operation.upper():
                 return qep_nodes.pop(i)
-        return qep_nodes.pop(0)  # fallback
+        return qep_nodes.pop(0) 
 
     def cost_comment(node):
         if node and node.startup_cost is not None and node.total_cost is not None:
@@ -278,7 +260,6 @@ def sql_to_pipe(query: str, qep_root=None, is_subquery=False) -> str:
 
         return None
 
-    # Handle SELECT
     if isinstance(tree, exp.Select):
         if tree.args.get("from"):
             from_clause = extract(tree.args["from"])
